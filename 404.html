@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="robots" content="noindex,nofollow" />
-<title>กำลังเชื่อมต่อ…</title>
+<title>ກຳລັງເຊື່ອມຕໍ່…</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -47,14 +47,14 @@
   <div class="card">
     <div id="loading">
       <div class="spinner"></div>
-      <h1>กำลังเชื่อมต่อ<span class="dots"></span></h1>
-      <p>ระบบกำลังหาลิงก์ที่ใช้งานได้ให้คุณ<br>กรุณารอสักครู่</p>
+      <h1>ກຳລັງເຊື່ອມຕໍ່<span class="dots"></span></h1>
+      <p>ລະບົບກຳລັງຫາລິ້ງທີ່ໃຊ້ໄດ້ໃຫ້ທ່ານ<br>ກະລຸນາລໍຖ້າບຶດໜຶ່ງ</p>
     </div>
 
     <div id="fail" class="fail">
-      <h1>⚠️ เชื่อมต่อไม่สำเร็จ</h1>
-      <p id="failMsg">ตอนนี้ยังหาลิงก์ที่เข้าได้ไม่เจอ<br>กรุณากดปุ่มด้านล่างเพื่อลองใหม่อีกครั้ง</p>
-      <button class="btn" onclick="location.reload()">🔄 ลองอีกครั้ง</button>
+      <h1>⚠️ ເຊື່ອມຕໍ່ບໍ່ສຳເລັດ</h1>
+      <p id="failMsg">ຕອນນີ້ຍັງຫາລິ້ງທີ່ເຂົ້າໄດ້ບໍ່ພົບ<br>ກະລຸນາກົດປຸ່ມລຸ່ມນີ້ ເພື່ອລອງໃໝ່ອີກຄັ້ງ</p>
+      <button class="btn" onclick="location.reload()">🔄 ລອງໃໝ່ອີກຄັ້ງ</button>
       <div class="muted" id="failCode"></div>
     </div>
   </div>
@@ -184,11 +184,11 @@
     document.getElementById("fail").style.display = "block";
     var msg = document.getElementById("failMsg");
     if (msg && code === "all-blocked") {
-      msg.innerHTML = "ระบบแจ้งทีมงานให้เตรียมลิงก์ใหม่แล้ว<br>กรุณารอสักครู่ แล้วกด “ลองอีกครั้ง”";
+      msg.innerHTML = "ລະບົບໄດ້ແຈ້ງທີມງານໃຫ້ກຽມລິ້ງໃໝ່ແລ້ວ<br>ກະລຸນາລໍຖ້າ ແລ້ວກົດ “ລອງໃໝ່ອີກຄັ້ງ”";
     }
     var el = document.getElementById("failCode");
     if (el && code) el.textContent = code;
-    document.title = "เชื่อมต่อไม่สำเร็จ";
+    document.title = "ເຊື່ອມຕໍ່ບໍ່ສຳເລັດ";
   }
 
   async function main() {
