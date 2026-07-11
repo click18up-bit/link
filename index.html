@@ -151,16 +151,18 @@
     location.replace("https://" + domain + "/");
   }
 
-  // ---- แจ้งแอดมินว่าโดเมนของลูกค้าตายหมด (fire-and-forget, worker มี cooldown กันสแปม) ----
-  function alertAdmin(tk) {
+  // ---- แจ้งแอดมินว่าโดเมนของลูกค้าตายหมด ----
+  // ยิงทีละ host หยุดทันทีที่สำเร็จ (host เดียวพอ) — กันแจ้งเบิ้ลจาก race ตอนยิง 2 host พร้อมกัน
+  async function alertAdmin(tk) {
     if (!tk) return;
-    API_HOSTS.forEach(function (h) {
+    for (var i = 0; i < API_HOSTS.length; i++) {
       try {
-        fetch(h + "/api/go-alert?t=" + encodeURIComponent(tk) + "&_=" + Date.now(), {
+        var r = await fetch(API_HOSTS[i] + "/api/go-alert?t=" + encodeURIComponent(tk) + "&_=" + Date.now(), {
           method: "POST", cache: "no-store", keepalive: true
-        }).catch(function () {});
-      } catch (e) {}
-    });
+        });
+        if (r && r.ok) return; // สำเร็จแล้ว ไม่ยิง host ถัดไป
+      } catch (e) { /* host นี้ล่ม ลองตัวถัดไป */ }
+    }
   }
 
   function showFail(code) {
