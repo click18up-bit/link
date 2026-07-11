@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex,nofollow" />
+<title>กำลังเชื่อมต่อ…</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: radial-gradient(120% 120% at 50% 0%, #14203a 0%, #070b14 60%, #04060c 100%);
+    color: #e8eef7;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 360px; text-align: center;
+  }
+  .spinner {
+    width: 54px; height: 54px; margin: 0 auto 22px;
+    border: 4px solid rgba(255,255,255,.14);
+    border-top-color: #4c8dff;
+    border-radius: 50%;
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { font-size: 19px; font-weight: 600; margin: 0 0 8px; }
+  p  { font-size: 14px; line-height: 1.6; color: #a9b6c9; margin: 0; }
+  .dots::after { content: ""; animation: dots 1.4s steps(4,end) infinite; }
+  @keyframes dots { 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"..."} 100%{content:""} }
+  .fail { display: none; }
+  .fail h1 { color: #ffd36b; }
+  .btn {
+    display: inline-block; margin-top: 20px; padding: 13px 26px;
+    background: #4c8dff; color: #fff; font-size: 15px; font-weight: 600;
+    border: 0; border-radius: 12px; cursor: pointer; text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { transform: scale(.97); }
+  .muted { margin-top: 16px; font-size: 12px; color: #6b7889; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div id="loading">
+      <div class="spinner"></div>
+      <h1>กำลังเชื่อมต่อ<span class="dots"></span></h1>
+      <p>ระบบกำลังหาลิงก์ที่ใช้งานได้ให้คุณ<br>กรุณารอสักครู่</p>
+    </div>
+
+    <div id="fail" class="fail">
+      <h1>⚠️ เชื่อมต่อไม่สำเร็จ</h1>
+      <p id="failMsg">ตอนนี้ยังหาลิงก์ที่เข้าได้ไม่เจอ<br>กรุณากดปุ่มด้านล่างเพื่อลองใหม่อีกครั้ง</p>
+      <button class="btn" onclick="location.reload()">🔄 ลองอีกครั้ง</button>
+      <div class="muted" id="failCode"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- ที่อยู่ของ API (worker) — เรียงตามลำดับลอง ----
+  // ดึงรายชื่อโดเมนล่าสุดของลูกค้า ถ้าตัวแรกโดนบล็อกจะลองตัวถัดไป
+  var API_HOSTS = [
+    "https://std1.vtnplay.net",
+    "https://domain-stock-api-d1.click18up.workers.dev"
+  ];
+
+  var PROBE_TIMEOUT = 3500;   // เวลารอต่อโดเมน (ms)
+  var FETCH_TIMEOUT = 4000;   // เวลารอดึงรายชื่อ (ms)
+
+  // ---- อ่าน token จาก URL: /go/<token> หรือ ?t=<token> ----
+  function getToken() {
+    var q = new URLSearchParams(location.search).get("t");
+    if (q) return q.trim().toLowerCase();
+    var m = location.pathname.match(/\/go\/([^\/?#]+)/i);
+    if (m && m[1]) return decodeURIComponent(m[1]).trim().toLowerCase();
+    // เผื่อ rewrite เป็น /<token> เดี่ยว ๆ
+    var seg = location.pathname.replace(/^\/+|\/+$/g, "");
+    if (seg && seg !== "index.html") return seg.trim().toLowerCase();
+    return "";
+  }
+
+  var token = getToken();
+
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error("timeout")); }, ms);
+      promise.then(function (v) { clearTimeout(t); resolve(v); },
+                   function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+
+  // ---- ดึงรายชื่อโดเมนจาก worker (ลองหลาย host) ----
+  async function fetchDomains(tk) {
+    for (var i = 0; i < API_HOSTS.length; i++) {
+      try {
+        var url = API_HOSTS[i] + "/api/go-data?t=" + encodeURIComponent(tk) + "&_=" + Date.now();
+        var ctrl = new AbortController();
+        var timer = setTimeout(function () { ctrl.abort(); }, FETCH_TIMEOUT);
+        var res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!res.ok) continue;
+        var data = await res.json();
+        if (data && data.ok && Array.isArray(data.domains) && data.domains.length) {
+          try { localStorage.setItem("golist:" + tk, JSON.stringify({ d: data.domains, ts: Date.now() })); } catch (e) {}
+          return data.domains;
+        }
+      } catch (e) { /* ลอง host ถัดไป */ }
+    }
+    // ---- fallback: รายชื่อที่เคยเซฟไว้ในเครื่อง (เผื่อ worker โดนบล็อกด้วย) ----
+    try {
+      var cached = JSON.parse(localStorage.getItem("golist:" + tk) || "null");
+      if (cached && Array.isArray(cached.d) && cached.d.length) return cached.d;
+    } catch (e) {}
+    return [];
+  }
+
+  // ---- ทดสอบว่าโดเมนเข้าได้ไหม (จากเครื่องลูกค้าเอง) ----
+  // no-cors: ถ้าเชื่อมต่อได้ = resolve, ถ้าโดน reset/บล็อก = reject
+  function probe(domain) {
+    var target = "https://" + domain + "/?_=" + Date.now();
+    return withTimeout(
+      fetch(target, { mode: "no-cors", cache: "no-store" }).then(function () { return domain; }),
+      PROBE_TIMEOUT
+    );
+  }
+
+  // ---- ลองทุกโดเมนพร้อมกัน ตัวไหนตอบก่อน (เรียงตามใหม่สุด) เด้งเข้าเลย ----
+  function firstAlive(domains) {
+    return new Promise(function (resolve, reject) {
+      var pending = domains.length;
+      if (!pending) return reject(new Error("empty"));
+      var done = false;
+      domains.forEach(function (d) {
+        probe(d).then(function () {
+          if (!done) { done = true; resolve(d); }
+        }).catch(function () {
+          pending -= 1;
+          if (pending === 0 && !done) reject(new Error("all_blocked"));
+        });
+      });
+    });
+  }
+
+  function go(domain) {
+    location.replace("https://" + domain + "/");
+  }
+
+  // ---- แจ้งแอดมินว่าโดเมนของลูกค้าตายหมด (fire-and-forget, worker มี cooldown กันสแปม) ----
+  function alertAdmin(tk) {
+    if (!tk) return;
+    API_HOSTS.forEach(function (h) {
+      try {
+        fetch(h + "/api/go-alert?t=" + encodeURIComponent(tk) + "&_=" + Date.now(), {
+          method: "POST", cache: "no-store", keepalive: true
+        }).catch(function () {});
+      } catch (e) {}
+    });
+  }
+
+  function showFail(code) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("fail").style.display = "block";
+    var msg = document.getElementById("failMsg");
+    if (msg && code === "all-blocked") {
+      msg.innerHTML = "ระบบแจ้งทีมงานให้เตรียมลิงก์ใหม่แล้ว<br>กรุณารอสักครู่ แล้วกด “ลองอีกครั้ง”";
+    }
+    var el = document.getElementById("failCode");
+    if (el && code) el.textContent = code;
+    document.title = "เชื่อมต่อไม่สำเร็จ";
+  }
+
+  async function main() {
+    if (!token) { showFail("no-token"); return; }
+    var domains = await fetchDomains(token);
+    if (!domains.length) { showFail("no-domains"); return; }
+    try {
+      var alive = await firstAlive(domains);
+      go(alive);
+    } catch (e) {
+      // ทุกตัวโดนบล็อก → แจ้งแอดมินให้เติมโดเมนใหม่ แล้วขึ้นหน้า "ลองอีกครั้ง"
+      alertAdmin(token);
+      showFail("all-blocked");
+    }
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>
