@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="robots" content="noindex,nofollow" />
-<title>ກຳລັງເຊື່ອມຕໍ່…</title>
+<title>ກຳລັງເຂົ້າສູ່ໜ້າເວັບ…</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -47,13 +47,13 @@
   <div class="card">
     <div id="loading">
       <div class="spinner"></div>
-      <h1>ກຳລັງເຊື່ອມຕໍ່<span class="dots"></span></h1>
-      <p>ລະບົບກຳລັງຫາລິ້ງທີ່ໃຊ້ໄດ້ໃຫ້ທ່ານ<br>ກະລຸນາລໍຖ້າບຶດໜຶ່ງ</p>
+      <h1>ກຳລັງເຂົ້າສູ່ໜ້າເວັບ<span class="dots"></span></h1>
+      <p>ກະລຸນາລໍຖ້າ ລະບົບກຳລັງພາທ່ານເຂົ້າສູ່ໜ້າເວັບ</p>
     </div>
 
     <div id="fail" class="fail">
-      <h1>⚠️ ເຊື່ອມຕໍ່ບໍ່ສຳເລັດ</h1>
-      <p id="failMsg">ຕອນນີ້ຍັງຫາລິ້ງທີ່ເຂົ້າໄດ້ບໍ່ພົບ<br>ກະລຸນາກົດປຸ່ມລຸ່ມນີ້ ເພື່ອລອງໃໝ່ອີກຄັ້ງ</p>
+      <h1>⚠️ ເຂົ້າເວັບບໍ່ໄດ້ຊົ່ວຄາວ</h1>
+      <p id="failMsg">ຕອນນີ້ລະບົບກຳລັງຈັດຊ່ອງທາງເຂົ້າໃໝ່ໃຫ້ທ່ານ<br>ກະລຸນາກົດປຸ່ມ “ລອງໃໝ່ອີກຄັ້ງ” ຂ້າງລຸ່ມ · ຖ້າຍັງເຂົ້າບໍ່ໄດ້ ກະລຸນາລໍຖ້າ 1-2 ນາທີ ແລ້ວລອງໃໝ່</p>
       <button class="btn" onclick="location.reload()">🔄 ລອງໃໝ່ອີກຄັ້ງ</button>
       <div class="muted" id="failCode"></div>
     </div>
@@ -182,13 +182,10 @@
   function showFail(code) {
     document.getElementById("loading").style.display = "none";
     document.getElementById("fail").style.display = "block";
-    var msg = document.getElementById("failMsg");
-    if (msg && code === "all-blocked") {
-      msg.innerHTML = "ລະບົບໄດ້ແຈ້ງທີມງານໃຫ້ກຽມລິ້ງໃໝ່ແລ້ວ<br>ກະລຸນາລໍຖ້າ ແລ້ວກົດ “ລອງໃໝ່ອີກຄັ້ງ”";
-    }
+    // ใช้ข้อความ default (ใน <p id="failMsg">) กับทุกกรณี — ลูกค้าไม่ต้องแยก
     var el = document.getElementById("failCode");
     if (el && code) el.textContent = code;
-    document.title = "ເຊື່ອມຕໍ່ບໍ່ສຳເລັດ";
+    document.title = "ເຂົ້າເວັບບໍ່ໄດ້ຊົ່ວຄາວ";
   }
 
   async function main() {
