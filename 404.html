@@ -70,8 +70,10 @@
     "https://domain-stock-api-d1.click18up.workers.dev"
   ];
 
-  var PROBE_TIMEOUT = 3500;   // เวลารอต่อโดเมน (ms)
+  var PROBE_TIMEOUT = 5000;   // เวลารอต่อโดเมน (ms) — 5 วิ กันเน็ตช้า false positive
   var FETCH_TIMEOUT = 4000;   // เวลารอดึงรายชื่อ (ms)
+  var PROBE_ATTEMPTS = 2;     // ลอง probe กี่รอบก่อนแจ้งตาย (retry กันเน็ตหลุดชั่วขณะ)
+  var RETRY_DELAY = 900;      // หน่วงระหว่างรอบ (ms) ให้เน็ต recover
 
   // ---- อ่าน token จาก URL: /go/<token> หรือ ?t=<token> ----
   function getToken() {
@@ -147,6 +149,18 @@
     });
   }
 
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // ---- ลอง firstAlive หลายรอบก่อนสรุปว่า "ตายหมด" ----
+  // กัน false positive: เน็ตมือถือลูกค้าหลุด/ช้าชั่วขณะ → probe fail รอบเดียวไม่ควรแจ้งตาย
+  async function tryConnect(domains, attempts) {
+    for (var i = 0; i < attempts; i++) {
+      try { return await firstAlive(domains); }
+      catch (e) { if (i < attempts - 1) await sleep(RETRY_DELAY); }
+    }
+    throw new Error("all_blocked");
+  }
+
   function go(domain) {
     location.replace("https://" + domain + "/");
   }
@@ -182,10 +196,10 @@
     var domains = await fetchDomains(token);
     if (!domains.length) { showFail("no-domains"); return; }
     try {
-      var alive = await firstAlive(domains);
+      var alive = await tryConnect(domains, PROBE_ATTEMPTS);
       go(alive);
     } catch (e) {
-      // ทุกตัวโดนบล็อก → แจ้งแอดมินให้เติมโดเมนใหม่ แล้วขึ้นหน้า "ลองอีกครั้ง"
+      // ลองครบทุกรอบแล้วยังเข้าไม่ได้ → แจ้งแอดมินให้เติมโดเมนใหม่ แล้วขึ้นหน้า "ลองอีกครั้ง"
       alertAdmin(token);
       showFail("all-blocked");
     }
