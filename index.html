@@ -79,6 +79,9 @@
   // ก่อนแจ้งแอดมินว่า "โดเมนตาย" ต้องมั่นใจว่าไม่ใช่เพราะเน็ตลูกค้าช้าเอง
   var CONTROL_HOSTS = ["www.google.com", "www.cloudflare.com"];
 
+  var AUTO_RETRY_MS = 15000;  // หน้า fail เช็คซ้ำเงียบ ๆ ทุก 15 วิ (เจอโดเมนใหม่ → เด้งเข้าเอง)
+  var AUTO_RETRY_MAX = 40;    // สูงสุด ~10 นาที แล้วหยุด (กันยิงเรื่อย ๆ)
+
   // ---- อ่าน token จาก URL: /go/<token> หรือ ?t=<token> ----
   function getToken() {
     var q = new URLSearchParams(location.search).get("t");
@@ -187,6 +190,26 @@
     location.replace("https://" + domain + "/");
   }
 
+  // ---- หน้า fail: เช็คซ้ำเงียบ ๆ ทุก 15 วิ ----
+  // พอแอดมินเติมโดเมนสด → go-data คืนโดเมนใหม่ → probe เจอ → เด้งเข้าเอง (ลูกค้าไม่ต้องกด)
+  // ไม่ยิง alertAdmin ซ้ำ (แจ้งไปแล้วรอบแรก) · ทำเฉพาะกรณีโดเมนตายจริง ไม่ใช่เน็ตช้า
+  var autoRetryTimer = null;
+  function scheduleAutoRetry() {
+    if (autoRetryTimer) return;
+    var count = 0;
+    autoRetryTimer = setInterval(async function () {
+      count += 1;
+      if (count > AUTO_RETRY_MAX) { clearInterval(autoRetryTimer); autoRetryTimer = null; return; }
+      try {
+        var ds = await fetchDomains(token);   // ดึงรายชื่อสดใหม่ (เห็นโดเมนที่แอดมินเพิ่งเติม)
+        if (!ds.length) return;
+        var alive = await firstAlive(ds);      // 1 รอบเงียบ ๆ (ไม่ retry/ไม่ alert)
+        clearInterval(autoRetryTimer); autoRetryTimer = null;
+        go(alive);                             // เจอแล้ว → เด้งเข้า
+      } catch (e) { /* ยังเข้าไม่ได้ รอรอบหน้า */ }
+    }, AUTO_RETRY_MS);
+  }
+
   // ---- แจ้งแอดมินว่าโดเมนของลูกค้าตายหมด ----
   // ยิงทีละ host หยุดทันทีที่สำเร็จ (host เดียวพอ) — กันแจ้งเบิ้ลจาก race ตอนยิง 2 host พร้อมกัน
   async function alertAdmin(tk) {
@@ -229,11 +252,12 @@
       // โดเมนเราเข้าไม่ได้ทุกตัว → เช็คก่อนว่าเน็ตลูกค้าดีจริงไหม (Google/CF เทียบ)
       var netOk = await isClientNetworkOk();
       if (netOk) {
-        // เน็ตลูกค้าดี = โดเมนเราตายจริง → แจ้งแอดมินให้เติมโดเมนใหม่
+        // เน็ตลูกค้าดี = โดเมนเราตายจริง → แจ้งแอดมิน + เช็คซ้ำเงียบ ๆ รอโดเมนใหม่
         alertAdmin(token);
         showFail("all-blocked");
+        scheduleAutoRetry();   // แอดมินเติมโดเมน → เด้งเข้าเองไม่ต้องกด
       } else {
-        // เน็ตลูกค้าเองแย่ (Google ก็เข้าไม่ได้) → ไม่แจ้ง แค่บอกลูกค้าเช็คเน็ต
+        // เน็ตลูกค้าเองแย่ (Google ก็เข้าไม่ได้) → ไม่แจ้ง ไม่ auto-retry (เปลืองแบต) แค่บอกเช็คเน็ต
         showFail("slow-net");
       }
     }
