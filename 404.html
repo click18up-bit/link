@@ -52,7 +52,7 @@
     </div>
 
     <div id="fail" class="fail">
-      <h1>⚠️ ເຂົ້າເວັບບໍ່ໄດ້ຊົ່ວຄາວ</h1>
+      <h1 id="failTitle">⚠️ ເຂົ້າເວັບບໍ່ໄດ້ຊົ່ວຄາວ</h1>
       <p id="failMsg">ຕອນນີ້ລະບົບກຳລັງຈັດຊ່ອງທາງເຂົ້າໃໝ່ໃຫ້ທ່ານ<br>ກະລຸນາກົດປຸ່ມ “ລອງໃໝ່ອີກຄັ້ງ” ຂ້າງລຸ່ມ · ຖ້າຍັງເຂົ້າບໍ່ໄດ້ ກະລຸນາລໍຖ້າ 1-2 ນາທີ ແລ້ວລອງໃໝ່</p>
       <button class="btn" onclick="location.reload()">🔄 ລອງໃໝ່ອີກຄັ້ງ</button>
       <div class="muted" id="failCode"></div>
@@ -74,6 +74,10 @@
   var FETCH_TIMEOUT = 4000;   // เวลารอดึงรายชื่อ (ms)
   var PROBE_ATTEMPTS = 2;     // ลอง probe กี่รอบก่อนแจ้งตาย (retry กันเน็ตหลุดชั่วขณะ)
   var RETRY_DELAY = 900;      // หน่วงระหว่างรอบ (ms) ให้เน็ต recover
+
+  // "ตัวเทียบเน็ต" — เว็บใหญ่ที่ลาวไม่บล็อก ใช้วัดว่าเน็ตลูกค้าดีจริงไหม
+  // ก่อนแจ้งแอดมินว่า "โดเมนตาย" ต้องมั่นใจว่าไม่ใช่เพราะเน็ตลูกค้าช้าเอง
+  var CONTROL_HOSTS = ["www.google.com", "www.cloudflare.com"];
 
   // ---- อ่าน token จาก URL: /go/<token> หรือ ?t=<token> ----
   function getToken() {
@@ -151,6 +155,24 @@
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
+  // ---- เน็ตลูกค้าดีไหม — ลองเปิด Google/Cloudflare เทียบ ----
+  // ตัวใดตัวหนึ่งเข้าได้ = เน็ตลูกค้าโอเค (โดเมนเราตายจริง)
+  // ทั้งคู่เข้าไม่ได้ = เน็ตลูกค้าเองแย่ (ไม่ใช่โดเมนเราตาย → ไม่แจ้งแอดมิน)
+  function isClientNetworkOk() {
+    return new Promise(function (resolve) {
+      var pending = CONTROL_HOSTS.length;
+      var ok = false;
+      CONTROL_HOSTS.forEach(function (h) {
+        probe(h).then(function () {
+          if (!ok) { ok = true; resolve(true); }
+        }).catch(function () {
+          pending -= 1;
+          if (pending === 0 && !ok) resolve(false);
+        });
+      });
+    });
+  }
+
   // ---- ลอง firstAlive หลายรอบก่อนสรุปว่า "ตายหมด" ----
   // กัน false positive: เน็ตมือถือลูกค้าหลุด/ช้าชั่วขณะ → probe fail รอบเดียวไม่ควรแจ้งตาย
   async function tryConnect(domains, attempts) {
@@ -182,10 +204,18 @@
   function showFail(code) {
     document.getElementById("loading").style.display = "none";
     document.getElementById("fail").style.display = "block";
-    // ใช้ข้อความ default (ใน <p id="failMsg">) กับทุกกรณี — ลูกค้าไม่ต้องแยก
+    // กรณีเน็ตลูกค้าช้าเอง (Google ก็เข้าไม่ได้) → เปลี่ยนข้อความให้บอกเช็คเน็ต
+    if (code === "slow-net") {
+      var t = document.getElementById("failTitle");
+      var m = document.getElementById("failMsg");
+      if (t) t.innerHTML = "📶 ອິນເຕີເນັດຊ້າ";
+      if (m) m.innerHTML = "ອິນເຕີເນັດຂອງທ່ານຊ້າ ຫຼື ບໍ່ໝັ້ນຄົງ<br>ກະລຸນາກວດເບິ່ງສັນຍານ ຫຼື ປ່ຽນເນັດ ແລ້ວກົດ “ລອງໃໝ່ອີກຄັ້ງ”";
+      document.title = "ອິນເຕີເນັດຊ້າ";
+    } else {
+      document.title = "ເຂົ້າເວັບບໍ່ໄດ້ຊົ່ວຄາວ";
+    }
     var el = document.getElementById("failCode");
     if (el && code) el.textContent = code;
-    document.title = "ເຂົ້າເວັບບໍ່ໄດ້ຊົ່ວຄາວ";
   }
 
   async function main() {
@@ -196,9 +226,16 @@
       var alive = await tryConnect(domains, PROBE_ATTEMPTS);
       go(alive);
     } catch (e) {
-      // ลองครบทุกรอบแล้วยังเข้าไม่ได้ → แจ้งแอดมินให้เติมโดเมนใหม่ แล้วขึ้นหน้า "ลองอีกครั้ง"
-      alertAdmin(token);
-      showFail("all-blocked");
+      // โดเมนเราเข้าไม่ได้ทุกตัว → เช็คก่อนว่าเน็ตลูกค้าดีจริงไหม (Google/CF เทียบ)
+      var netOk = await isClientNetworkOk();
+      if (netOk) {
+        // เน็ตลูกค้าดี = โดเมนเราตายจริง → แจ้งแอดมินให้เติมโดเมนใหม่
+        alertAdmin(token);
+        showFail("all-blocked");
+      } else {
+        // เน็ตลูกค้าเองแย่ (Google ก็เข้าไม่ได้) → ไม่แจ้ง แค่บอกลูกค้าเช็คเน็ต
+        showFail("slow-net");
+      }
     }
   }
 
