@@ -70,10 +70,14 @@
     "https://domain-stock-api-d1.click18up.workers.dev"
   ];
 
-  var PROBE_TIMEOUT = 5000;   // เวลารอต่อโดเมน (ms) — 5 วิ กันเน็ตช้า false positive
-  var FETCH_TIMEOUT = 4000;   // เวลารอดึงรายชื่อ (ms)
-  var PROBE_ATTEMPTS = 2;     // ลอง probe กี่รอบก่อนแจ้งตาย (retry กันเน็ตหลุดชั่วขณะ)
-  var RETRY_DELAY = 900;      // หน่วงระหว่างรอบ (ms) ให้เน็ต recover
+  // ⛔️⛔️ ห้าม probe โดเมนพร้อมกัน (parallel) เด็ดขาด — ต้อง "ทีละตัว" เท่านั้น ⛔️⛔️
+  // เหตุผล (วัดจริงบน Unitel 2026-07-17): ทุก probe = TLS handshake ที่ประกาศชื่อโดเมนใน SNI
+  // ให้ DPI ของ ISP เห็น. ถ้ายิงพร้อมกัน 6 ตัว = เปิดเผยโดเมนสำรอง "ทั้งพวง" ทุกครั้งที่ลูกค้าเปิด
+  // → ISP เก็บครบแล้วบล็อกยกชุด → โดเมนตายภายใน 1-2 วัน (prefix cpl เผา 3-4 โดเมน/วัน)
+  // probe ทีละตัว + หยุดทันทีที่เจอตัวเป็น = เปิดเผยเฉพาะตัวที่จะใช้จริง สำรองที่ยังสดไม่โดนแตะ
+  var PROBE_TIMEOUT = 4000;          // เวลารอต่อโดเมน (ms) — โดเมนเป็นตอบ <1s, ที่โดนบล็อกจะ timeout
+  var FETCH_TIMEOUT = 4000;          // เวลารอดึงรายชื่อ (ms)
+  var WINNER_KEY = "gowin:";         // จำโดเมนที่ใช้ได้ล่าสุด → เข้าครั้งหน้า probe แค่ตัวเดียว
 
   // "ตัวเทียบเน็ต" — เว็บใหญ่ที่ลาวไม่บล็อก ใช้วัดว่าเน็ตลูกค้าดีจริงไหม
   // ก่อนแจ้งแอดมินว่า "โดเมนตาย" ต้องมั่นใจว่าไม่ใช่เพราะเน็ตลูกค้าช้าเอง
@@ -139,22 +143,23 @@
     );
   }
 
-  // ---- ลองทุกโดเมนพร้อมกัน ตัวไหนตอบก่อน (เรียงตามใหม่สุด) เด้งเข้าเลย ----
-  function firstAlive(domains) {
-    return new Promise(function (resolve, reject) {
-      var pending = domains.length;
-      if (!pending) return reject(new Error("empty"));
-      var done = false;
-      domains.forEach(function (d) {
-        probe(d).then(function () {
-          if (!done) { done = true; resolve(d); }
-        }).catch(function () {
-          pending -= 1;
-          if (pending === 0 && !done) reject(new Error("all_blocked"));
-        });
-      });
-    });
+  // ---- ⭐ probe "ทีละตัว" หยุดทันทีที่เจอตัวเป็น ----
+  // go-data เรียงใหม่สุดมาก่อน = ตัวแรกมักยังไม่โดนบล็อก → ปกติจบที่ probe ครั้งเดียว
+  // ⛔️ ห้ามเปลี่ยนกลับเป็น Promise.race/forEach พร้อมกัน (เหตุผลด้านบน)
+  async function probeSeq(domains) {
+    for (var i = 0; i < domains.length; i++) {
+      try {
+        await probe(domains[i]);
+        return domains[i];            // เจอตัวเป็น → หยุดเลย ไม่แตะตัวที่เหลือ
+      } catch (e) { /* ตัวนี้ตาย/โดนบล็อก → ลองตัวถัดไป */ }
+    }
+    throw new Error("all_blocked");
   }
+
+  // ---- จำโดเมนที่ใช้ได้ล่าสุด (ลดการเปิดเผยเหลือ 1 ตัว/ครั้ง) ----
+  function getWinner(tk) { try { return localStorage.getItem(WINNER_KEY + tk) || ""; } catch (e) { return ""; } }
+  function setWinner(tk, d) { try { localStorage.setItem(WINNER_KEY + tk, d); } catch (e) {} }
+  function clearWinner(tk) { try { localStorage.removeItem(WINNER_KEY + tk); } catch (e) {} }
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
@@ -176,15 +181,8 @@
     });
   }
 
-  // ---- ลอง firstAlive หลายรอบก่อนสรุปว่า "ตายหมด" ----
-  // กัน false positive: เน็ตมือถือลูกค้าหลุด/ช้าชั่วขณะ → probe fail รอบเดียวไม่ควรแจ้งตาย
-  async function tryConnect(domains, attempts) {
-    for (var i = 0; i < attempts; i++) {
-      try { return await firstAlive(domains); }
-      catch (e) { if (i < attempts - 1) await sleep(RETRY_DELAY); }
-    }
-    throw new Error("all_blocked");
-  }
+  // หมายเหตุ: เลิกใช้ tryConnect/firstAlive (ยิงพร้อมกัน) แล้ว — ใช้ probeSeq ทีละตัวแทน
+  // กัน false positive จากเน็ตช้า: ใช้ isClientNetworkOk() เทียบ + auto-retry ทุก 15 วิ แทนการ retry รัว
 
   function go(domain) {
     location.replace("https://" + domain + "/");
@@ -203,8 +201,9 @@
       try {
         var ds = await fetchDomains(token);   // ดึงรายชื่อสดใหม่ (เห็นโดเมนที่แอดมินเพิ่งเติม)
         if (!ds.length) return;
-        var alive = await firstAlive(ds);      // 1 รอบเงียบ ๆ (ไม่ retry/ไม่ alert)
+        var alive = await probeSeq(ds);        // ⭐ ทีละตัว (เดิมยิงพร้อมกันทุก 15 วิ = เผาโดเมนหนักมาก)
         clearInterval(autoRetryTimer); autoRetryTimer = null;
+        setWinner(token, alive);
         go(alive);                             // เจอแล้ว → เด้งเข้า
       } catch (e) { /* ยังเข้าไม่ได้ รอรอบหน้า */ }
     }, AUTO_RETRY_MS);
@@ -243,10 +242,21 @@
 
   async function main() {
     if (!token) { showFail("no-token"); return; }
+
+    // ⭐ 1) เคยเจอโดเมนที่ใช้ได้ → probe "แค่ตัวเดียว" แล้วเข้าเลย
+    //    (เปิดเผยเฉพาะตัวที่กำลังจะใช้จริง — สำรองตัวอื่นไม่โดนแตะเลย)
+    var win = getWinner(token);
+    if (win) {
+      try { await probe(win); go(win); return; }
+      catch (e) { clearWinner(token); }   // ตัวเดิมตายแล้ว → ไปหาตัวใหม่
+    }
+
     var domains = await fetchDomains(token);
     if (!domains.length) { showFail("no-domains"); return; }
     try {
-      var alive = await tryConnect(domains, PROBE_ATTEMPTS);
+      // ⭐ 2) probe ทีละตัว (ใหม่สุดก่อน) หยุดที่ตัวแรกที่เป็น + จำไว้ใช้ครั้งหน้า
+      var alive = await probeSeq(domains);
+      setWinner(token, alive);
       go(alive);
     } catch (e) {
       // โดเมนเราเข้าไม่ได้ทุกตัว → เช็คก่อนว่าเน็ตลูกค้าดีจริงไหม (Google/CF เทียบ)
